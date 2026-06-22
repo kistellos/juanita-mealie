@@ -27,6 +27,7 @@ class FakeMealie:
     """In-memory Mealie double recording everything push_to_mealie does."""
 
     def __init__(self):
+        self.base = "http://mealie.example.com"
         self.created_name: str | None = None
         self.updated: dict | None = None
         self.images: list[tuple[str, str]] = []
@@ -63,6 +64,9 @@ class FakeMealie:
         if self.image_should_fail:
             raise RuntimeError("image boom")
         self.images.append((slug, image_url))
+
+    def group_slug(self) -> str | None:
+        return "home"
 
 
 @pytest.fixture

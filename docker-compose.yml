@@ -1,0 +1,14 @@
+services:
+  juanita-web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      MEALIE_URL: ${MEALIE_URL}
+      MEALIE_TOKEN: ${MEALIE_TOKEN}
+      JUANITA_WEB_TOKEN: ${JUANITA_WEB_TOKEN}
+      # YTDLP_COOKIES_FILE: /run/secrets/cookies.txt
+    # volumes:
+    #   - ./cookies.txt:/run/secrets/cookies.txt:ro
+    restart: unless-stopped

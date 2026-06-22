@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>juanita</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    h1 { font-size: 1.4rem; }
+    .tabs { display: flex; gap: 0.25rem; margin-bottom: 0.5rem; }
+    .tabs button { padding: 0.3rem 0.8rem; font-size: 0.9rem; cursor: pointer; border: 1px solid #ccc; background: #f5f5f5; border-radius: 4px; }
+    .tabs button.active { background: #fff; border-color: #888; font-weight: 600; }
+    form { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; align-items: flex-start; }
+    input[type=url] { flex: 1; padding: 0.5rem; font-size: 1rem; }
+    textarea { flex: 1; padding: 0.5rem; font-size: 1rem; min-height: 6rem; font-family: inherit; }
+    button[type=submit] { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
+    button:disabled { cursor: default; opacity: 0.6; }
+    #result { margin-bottom: 1.5rem; min-height: 1.5rem; }
+    .status-queued, .status-running { color: #946200; }
+    .status-done { color: #1a7f37; }
+    .status-error { color: #b3261e; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid #ddd; }
+    a { color: #0a5cc2; }
+  </style>
+</head>
+<body>
+  <h1>juanita</h1>
+
+  <div class="tabs">
+    <button type="button" id="tab-url" class="active">URL</button>
+    <button type="button" id="tab-text">Paste text</button>
+  </div>
+  <form id="submit-form">
+    <input type="url" id="url" name="url" placeholder="https://youtu.be/..." required autofocus>
+    <textarea id="text" name="text" placeholder="Paste recipe text here..." style="display:none" required></textarea>
+    <button type="submit">Import</button>
+  </form>
+  <div id="result"></div>
+
+  <h2>Recent</h2>
+  <table>
+    <thead><tr><th>Source</th><th>Status</th><th>Recipe</th></tr></thead>
+    <tbody id="recent-jobs">
+      {% for job in jobs %}
+      <tr>
+        <td>{{ job.preview }}</td>
+        <td class="status-{{ job.status }}">{{ job.status }}</td>
+        <td>
+          {% if job.mealie_link %}<a href="{{ job.mealie_link }}">{{ job.recipe_name or job.mealie_link }}</a>
+          {% elif job.error %}{{ job.error }}
+          {% else %}&mdash;{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3">No imports yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <script>
+    const tabUrl = document.getElementById("tab-url");
+    const tabText = document.getElementById("tab-text");
+    const form = document.getElementById("submit-form");
+    const result = document.getElementById("result");
+    const urlInput = document.getElementById("url");
+    const textInput = document.getElementById("text");
+    const submitButton = form.querySelector("button[type=submit]");
+    const recentBody = document.getElementById("recent-jobs");
+
+    function setMode(mode) {
+      const isUrl = mode === "url";
+      tabUrl.classList.toggle("active", isUrl);
+      tabText.classList.toggle("active", !isUrl);
+      urlInput.style.display = isUrl ? "" : "none";
+      textInput.style.display = isUrl ? "none" : "";
+      urlInput.required = isUrl;
+      textInput.required = !isUrl;
+    }
+    tabUrl.addEventListener("click", () => setMode("url"));
+    tabText.addEventListener("click", () => setMode("text"));
+    setMode("url");
+
+    function escapeHtml(s) {
+      return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+      }[c]));
+    }
+
+    function render(job) {
+      if (job.status === "done") {
+        result.innerHTML = `<span class="status-done">Done:</span> ` +
+          `<a href="${escapeHtml(job.mealie_link)}">${escapeHtml(job.recipe_name)}</a>`;
+      } else if (job.status === "error") {
+        result.innerHTML = `<span class="status-error">Failed:</span> ${escapeHtml(job.error)}`;
+      } else {
+        result.innerHTML =
+          `<span class="status-${job.status}">${job.status}...</span> ${escapeHtml(job.preview)}`;
+      }
+    }
+
+    function renderRecent(jobsList) {
+      if (jobsList.length === 0) {
+        recentBody.innerHTML = `<tr><td colspan="3">No imports yet.</td></tr>`;
+        return;
+      }
+      recentBody.innerHTML = jobsList.map((job) => {
+        let recipeCell = "&mdash;";
+        if (job.mealie_link) {
+          recipeCell = `<a href="${escapeHtml(job.mealie_link)}">` +
+            `${escapeHtml(job.recipe_name || job.mealie_link)}</a>`;
+        } else if (job.error) {
+          recipeCell = escapeHtml(job.error);
+        }
+        return `<tr>
+          <td>${escapeHtml(job.preview)}</td>
+          <td class="status-${job.status}">${job.status}</td>
+          <td>${recipeCell}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    async function refreshRecent() {
+      const res = await fetch("/jobs");
+      if (!res.ok) return;
+      const { jobs: recent } = await res.json();
+      renderRecent(recent);
+    }
+
+    async function poll(id) {
+      const res = await fetch(`/jobs/${id}`);
+      const job = await res.json();
+      render(job);
+      if (job.status === "queued" || job.status === "running") {
+        setTimeout(() => poll(id), 2000);
+      } else {
+        submitButton.disabled = false;
+        refreshRecent();
+      }
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      submitButton.disabled = true;
+      const isUrl = tabUrl.classList.contains("active");
+      const payload = isUrl ? { url: urlInput.value } : { text: textInput.value };
+      const res = await fetch("/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        result.innerHTML = `<span class="status-error">Failed:</span> ${escapeHtml((await res.json()).detail)}`;
+        submitButton.disabled = false;
+        return;
+      }
+      const { id } = await res.json();
+      urlInput.value = "";
+      textInput.value = "";
+      poll(id);
+    });
+
+    setInterval(refreshRecent, 4000);
+  </script>
+</body>
+</html>

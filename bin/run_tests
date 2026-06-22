@@ -2,8 +2,9 @@
 # Run the juanita test suite from this checkout, using fades.
 #
 # Like bin/run_dev, fades creates/reuses a managed virtualenv with this project
-# installed editable (`-e .`), so src/ edits are picked up on the next run. The
-# `-d pytest` pulls pytest into that venv; any extra args are forwarded to
+# installed editable, including its `dev` extra (`-e .[dev]`, which pulls in
+# pytest, httpx, and the `web` extra so tests/test_web.py can import FastAPI),
+# so src/ edits are picked up on the next run. Any extra args are forwarded to
 # pytest.
 #
 # Usage:
@@ -23,9 +24,9 @@ if ! command -v fades >/dev/null 2>&1; then
     exit 1
 fi
 
-pip_options="-e ."
+pip_options="-e .[dev]"
 if [[ "${FADES_REBUILD:-}" == "1" ]]; then
-    pip_options="-e . --force-reinstall"
+    pip_options="-e .[dev] --force-reinstall"
 fi
 
 exec fades -d pytest --pip-options="$pip_options" -x pytest -v -- "$@"

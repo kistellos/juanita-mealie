@@ -168,6 +168,99 @@ See [CLAUDE.md](./CLAUDE.md) for the detailed pipeline and design notes.
 - For plain webpages, the image comes from the page's `og:image` (falling back
   to `twitter:image`) when the page sets one; sites without either get no image.
 
+## Web frontend
+
+For dropping URLs in from a browser instead of a terminal, `juanita-web` is a
+small FastAPI app over the same pipeline: paste a URL, it runs as a background
+job (extraction takes 30s+), and the page polls until it's done. It's gated by
+a single shared secret (HTTP Basic auth — any username, the configured
+password), not full user accounts, so only run it somewhere you'd trust with
+the same access as Mealie itself.
+
+### With Docker Compose
+
+```bash
+cp .env.example .env   # fill in ANTHROPIC_API_KEY, MEALIE_URL, MEALIE_TOKEN,
+                        # and JUANITA_WEB_TOKEN (a password of your choosing)
+docker compose up -d --build
+```
+
+Open `http://localhost:8000`, log in with `JUANITA_WEB_TOKEN` as the password.
+
+### With plain Docker
+
+```bash
+docker build -t juanita-web .
+docker run -p 8000:8000 \
+  -e ANTHROPIC_API_KEY=sk-ant-... \
+  -e MEALIE_URL=https://mealie.example.com \
+  -e MEALIE_TOKEN=... \
+  -e JUANITA_WEB_TOKEN=... \
+  juanita-web
+```
+
+### Without Docker
+
+```bash
+pip install 'juanita-mealie[web]'
+ANTHROPIC_API_KEY=... MEALIE_URL=... MEALIE_TOKEN=... JUANITA_WEB_TOKEN=... juanita-web
+```
+
+### On Kubernetes
+
+Same image, wired up with a `Secret` for the four variables above. A minimal
+example:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: juanita-web
+stringData:
+  ANTHROPIC_API_KEY: sk-ant-...
+  MEALIE_URL: https://mealie.example.com
+  MEALIE_TOKEN: ...
+  JUANITA_WEB_TOKEN: ...
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: juanita-web
+spec:
+  replicas: 1 # job status lives in memory in the one process; don't scale out
+  selector:
+    matchLabels: { app: juanita-web }
+  template:
+    metadata:
+      labels: { app: juanita-web }
+    spec:
+      containers:
+        - name: juanita-web
+          image: juanita-web # build & push the Dockerfile above to your registry
+          ports: [{ containerPort: 8000 }]
+          envFrom: [{ secretRef: { name: juanita-web } }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: juanita-web
+spec:
+  selector: { app: juanita-web }
+  ports: [{ port: 80, targetPort: 8000 }]
+```
+
+Point an Ingress (or your internal DNS) at the Service to land it at
+`juanita.internal`.
+
+### Notes for headless/container use
+
+- `YTDLP_COOKIES_FROM_BROWSER` doesn't work here — there's no browser profile
+  to read cookies from inside a container. If YouTube starts rate-limiting
+  caption downloads (`HTTP 429`) from your cluster's IP, mount a `cookies.txt`
+  export into the container and set `YTDLP_COOKIES_FILE` to its path instead.
+- Job history is in-memory and capped at the last 50 imports; it resets on
+  restart. Mealie remains the durable record of anything actually imported.
+
 ## Development
 
 Run Juanita straight from your checkout with [fades](https://github.com/PyAr/fades)

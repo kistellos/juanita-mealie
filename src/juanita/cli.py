@@ -255,19 +255,18 @@ def fetch_source(url: str, *, cookies_from_browser: str | None = None,
         return fetch_webpage(url)
 
 
-# ---- 1b. Local text files ---------------------------------------------------
+# ---- 1b. Raw recipe text (local files, pasted text, ...) -------------------
 
-def load_text_file(path: str) -> dict:
-    """Read a local recipe text file into the same record shape as fetch_video.
+def text_to_source_record(text: str, *, default_title: str = "") -> dict:
+    """Build a source record straight from raw recipe text, no file or URL.
 
-    The whole file is the body; the first non-blank line seeds the title (Claude
-    still produces the final recipe name). There's no source URL or thumbnail.
+    The whole text is the body; the first non-blank line seeds the title
+    (Claude still produces the final recipe name). There's no source URL or
+    thumbnail. Used both for local text files and pasted text (e.g. the web
+    frontend).
     """
-    p = Path(path)
-    text = p.read_text(encoding="utf-8", errors="replace").strip()
-    if not text:
-        raise RuntimeError(f"file is empty: {path}")
-    title = next((ln.strip() for ln in text.splitlines() if ln.strip()), p.stem)
+    text = text.strip()
+    title = next((ln.strip() for ln in text.splitlines() if ln.strip()), default_title)
     return {
         "title": title,
         "description": "",
@@ -275,6 +274,16 @@ def load_text_file(path: str) -> dict:
         "thumbnail": None,
         "body": text,
     }
+
+
+def load_text_file(path: str) -> dict:
+    """Read a local recipe text file into the same record shape as fetch_video."""
+    p = Path(path)
+    text = p.read_text(encoding="utf-8", errors="replace")
+    record = text_to_source_record(text, default_title=p.stem)
+    if not record["body"]:
+        raise RuntimeError(f"file is empty: {path}")
+    return record
 
 
 # ---- 1c. Generic webpages ----------------------------------------------------
