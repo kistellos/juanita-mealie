@@ -77,12 +77,52 @@ def test_push_no_tags(fake_mealie):
     assert "tags" not in fake_mealie.updated
 
 
-def test_push_sets_image_from_thumbnail(fake_mealie):
+class FakeImageResponse:
+    def __init__(self, content: bytes, content_type: str):
+        self.content = content
+        self.headers = {"Content-Type": content_type}
+
+    def raise_for_status(self) -> None:
+        pass
+
+
+def test_push_sets_image_from_thumbnail(fake_mealie, monkeypatch):
+    monkeypatch.setattr(
+        cli.requests, "get",
+        lambda url, **kw: FakeImageResponse(b"fake-jpeg-bytes", "image/jpeg"),
+    )
     cli.push_to_mealie(fake_mealie, make_recipe(), video_source())
-    assert fake_mealie.images == [("the-slug", "https://img/abc.jpg")]
+    assert fake_mealie.images == [("the-slug", b"fake-jpeg-bytes", "jpg")]
 
 
-def test_push_image_failure_is_non_fatal(fake_mealie):
+def test_push_downloads_image_itself_instead_of_letting_mealie_fetch_it(fake_mealie, monkeypatch):
+    # Some sites 403 Mealie's own outbound fetch but are fine with a normal
+    # client, so juanita downloads the thumbnail itself and uploads the bytes.
+    calls = []
+    monkeypatch.setattr(
+        cli.requests, "get",
+        lambda url, **kw: calls.append(url) or FakeImageResponse(b"bytes", "image/png"),
+    )
+    cli.push_to_mealie(fake_mealie, make_recipe(), video_source())
+    assert calls == ["https://img/abc.jpg"]
+    assert fake_mealie.images == [("the-slug", b"bytes", "png")]
+
+
+def test_push_image_download_failure_is_non_fatal(fake_mealie, monkeypatch):
+    def boom(url, **kw):
+        raise RuntimeError("403 Forbidden")
+
+    monkeypatch.setattr(cli.requests, "get", boom)
+    slug = cli.push_to_mealie(fake_mealie, make_recipe(), video_source())
+    assert slug == "the-slug"  # no exception despite the download failure
+    assert fake_mealie.images == []
+
+
+def test_push_image_upload_failure_is_non_fatal(fake_mealie, monkeypatch):
+    monkeypatch.setattr(
+        cli.requests, "get",
+        lambda url, **kw: FakeImageResponse(b"bytes", "image/jpeg"),
+    )
     fake_mealie.image_should_fail = True
     slug = cli.push_to_mealie(fake_mealie, make_recipe(), video_source())
     assert slug == "the-slug"  # no exception despite image failure

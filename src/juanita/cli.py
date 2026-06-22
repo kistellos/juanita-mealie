@@ -288,7 +288,7 @@ def load_text_file(path: str) -> dict:
 
 # ---- 1c. Generic webpages ----------------------------------------------------
 
-_WEBPAGE_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; juanita-mealie recipe importer)"}
+_BROWSER_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; juanita-mealie recipe importer)"}
 
 
 class _PageParser(HTMLParser):
@@ -346,7 +346,7 @@ def fetch_webpage(url: str) -> dict:
     Claude to extract a recipe from, and `og:image`/`twitter:image` (when
     present) becomes the thumbnail.
     """
-    r = requests.get(url, headers=_WEBPAGE_HEADERS, timeout=30)
+    r = requests.get(url, headers=_BROWSER_HEADERS, timeout=30)
     r.raise_for_status()
     parser = _PageParser()
     parser.feed(r.text)
@@ -627,11 +627,18 @@ class Mealie:
                     self._unit_cache.setdefault(k.strip().lower(), u)
         self._units_loaded = True
 
-    def set_image_from_url(self, slug: str, image_url: str) -> None:
-        r = self.s.post(
+    def set_image(self, slug: str, content: bytes, extension: str) -> None:
+        """Upload image bytes directly (PUT, multipart), instead of POSTing the
+        URL and having Mealie fetch it server-side.
+
+        Some sites' anti-bot protection 403s Mealie's own outbound fetch (its
+        HTTP client looks nothing like a browser) even though the same URL is
+        fine for a normal client — see _download_image.
+        """
+        files = {"image": (f"image.{extension}", content)}
+        r = self.s.put(
             f"{self.base}/api/recipes/{slug}/image",
-            json={"url": image_url, "includeTags": False},
-            timeout=60,
+            files=files, data={"extension": extension}, timeout=60,
         )
         _check(r)
 
@@ -677,6 +684,28 @@ def _build_recipe_ingredient(mealie: Mealie, ing: Ingredient, *, link: bool = Tr
     }
 
 
+_IMAGE_EXTENSIONS = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "image/avif": "avif",
+}
+
+
+def _download_image(url: str) -> tuple[bytes, str]:
+    """Download a thumbnail ourselves, for set_image to upload as a file.
+
+    Mealie's own POST .../image {url} fetch is done by its HTTP client, which
+    some sites' anti-bot protection 403s even though the same URL is fine for
+    a normal client (e.g. with a browser User-Agent) — see _BROWSER_HEADERS.
+    """
+    r = requests.get(url, headers=_BROWSER_HEADERS, timeout=30)
+    r.raise_for_status()
+    content_type = r.headers.get("Content-Type", "").split(";")[0].strip().lower()
+    return r.content, _IMAGE_EXTENSIONS.get(content_type, "jpg")
+
+
 def push_to_mealie(mealie: Mealie, recipe: Recipe, source: dict, *,
                    include_tags: bool = True, link_ingredients: bool = True) -> str:
     slug = mealie.create(recipe.name)
@@ -709,8 +738,10 @@ def push_to_mealie(mealie: Mealie, recipe: Recipe, source: dict, *,
 
     if source.get("thumbnail"):
         try:
-            mealie.set_image_from_url(slug, source["thumbnail"])
-            log.debug("mealie: set image from %s", source["thumbnail"])
+            content, ext = _download_image(source["thumbnail"])
+            mealie.set_image(slug, content, ext)
+            log.debug("mealie: set image (.%s, %d bytes) from %s",
+                      ext, len(content), source["thumbnail"])
         except Exception as e:  # noqa: BLE001 - image is best-effort
             log.warning("could not set image for %s: %s", slug, e)
 

@@ -30,7 +30,7 @@ class FakeMealie:
         self.base = "http://mealie.example.com"
         self.created_name: str | None = None
         self.updated: dict | None = None
-        self.images: list[tuple[str, str]] = []
+        self.images: list[tuple[str, bytes, str]] = []
         self.image_should_fail = False
         self.tag_calls: list[str] = []
         self.food_calls: list[str] = []
@@ -60,10 +60,10 @@ class FakeMealie:
         self.unit_calls.append(name)
         return {"id": f"unit-{name}", "name": name} if name.strip() else None
 
-    def set_image_from_url(self, slug: str, image_url: str) -> None:
+    def set_image(self, slug: str, content: bytes, extension: str) -> None:
         if self.image_should_fail:
             raise RuntimeError("image boom")
-        self.images.append((slug, image_url))
+        self.images.append((slug, content, extension))
 
     def group_slug(self) -> str | None:
         return "home"

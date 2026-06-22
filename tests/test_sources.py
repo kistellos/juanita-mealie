@@ -200,6 +200,34 @@ def test_fetch_webpage_falls_back_to_title_tag_without_og_meta(monkeypatch):
     assert rec["thumbnail"] is None
 
 
+class FakeImageResponse:
+    def __init__(self, content: bytes, content_type: str):
+        self.content = content
+        self.headers = {"Content-Type": content_type}
+
+    def raise_for_status(self) -> None:
+        pass
+
+
+def test_download_image_picks_extension_from_content_type(monkeypatch):
+    monkeypatch.setattr(
+        cli.requests, "get",
+        lambda url, **kw: FakeImageResponse(b"\xff\xd8", "image/jpeg; charset=binary"),
+    )
+    content, ext = cli._download_image("https://example.com/hero.jpg")
+    assert content == b"\xff\xd8"
+    assert ext == "jpg"
+
+
+def test_download_image_unknown_content_type_defaults_to_jpg(monkeypatch):
+    monkeypatch.setattr(
+        cli.requests, "get",
+        lambda url, **kw: FakeImageResponse(b"...", "application/octet-stream"),
+    )
+    _content, ext = cli._download_image("https://example.com/hero")
+    assert ext == "jpg"
+
+
 def test_fetch_source_falls_back_to_webpage_on_download_error(monkeypatch):
     def fake_fetch_video(url, **kw):
         raise DownloadError("Unsupported URL")

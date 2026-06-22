@@ -95,8 +95,15 @@ otherwise → `fetch_source` (a URL).
      When the record has a `source_url`, set `orgURL` and append `Source: <url>`
      to the description; both are skipped for local files (no URL).
    - `PUT /api/recipes/{slug}` with the merged document.
-   - `POST /api/recipes/{slug}/image` `{url: thumbnail}` to set the image, only
-     when a `thumbnail` is present (failure here is non-fatal — logged/skipped).
+   - When a `thumbnail` is present: `_download_image` fetches it ourselves
+     (`requests`, browser-like `_BROWSER_HEADERS`) and `Mealie.set_image`
+     uploads the bytes via `PUT /api/recipes/{slug}/image` (multipart,
+     `image` + `extension` fields) — deliberately *not* the `POST .../image
+     {url}` "fetch it yourself" endpoint, because some sites' anti-bot
+     protection 403s Mealie's own outbound fetch (its HTTP client looks
+     nothing like a browser) even though the same URL is fine for juanita's
+     request. Failure at either step (download or upload) is non-fatal —
+     logged/skipped.
 
 ## Configuration
 
