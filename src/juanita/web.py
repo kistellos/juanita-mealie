@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Minimal web frontend for juanita: paste a URL or recipe text, get a Mealie recipe.
 
-Wraps the existing CLI pipeline (fetch_video -> extract_recipe -> push_to_mealie)
+Wraps the existing CLI pipeline (fetch_source -> extract_recipe -> push_to_mealie)
 behind a small FastAPI app. Extraction takes 30s+ (yt-dlp fetch + a Claude
 call), so submissions run as background jobs that the page polls for status
 rather than holding the HTTP connection open.
@@ -39,7 +39,7 @@ from pydantic import BaseModel
 from juanita.cli import (
     Mealie,
     extract_recipe,
-    fetch_video,
+    fetch_source,
     load_config,
     push_to_mealie,
     text_to_source_record,
@@ -152,7 +152,7 @@ def _run_job(
         if job.kind == "text":
             source = text_to_source_record(job.source)
         else:
-            source = fetch_video(job.source, cookies_file=cookies_file)
+            source = fetch_source(job.source, cookies_file=cookies_file)
         recipe = extract_recipe(client, source)
         job.recipe_name = recipe.name
         slug = push_to_mealie(mealie, recipe, source)

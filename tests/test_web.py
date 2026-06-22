@@ -78,7 +78,7 @@ def test_index_accepts_correct_token(client):
 
 
 def test_submit_and_poll_to_done(client, monkeypatch):
-    monkeypatch.setattr(web, "fetch_video", lambda url, **kw: source_record(source_url=url))
+    monkeypatch.setattr(web, "fetch_source", lambda url, **kw: source_record(source_url=url))
     monkeypatch.setattr(web, "extract_recipe", lambda client, source: make_recipe())
     monkeypatch.setattr(web, "push_to_mealie", lambda mealie, recipe, source, **kw: "pan-de-nuez")
 
@@ -97,7 +97,7 @@ def test_submit_surfaces_pipeline_error(client, monkeypatch):
     def boom(url, **kw):
         raise RuntimeError("yt-dlp exploded")
 
-    monkeypatch.setattr(web, "fetch_video", boom)
+    monkeypatch.setattr(web, "fetch_source", boom)
 
     r = client.post("/jobs", json={"url": "https://youtu.be/bad"}, auth=AUTH)
     job_id = r.json()["id"]
@@ -117,7 +117,7 @@ def test_submit_requires_exactly_one_of_url_or_text(client):
 
 def test_submit_text_and_poll_to_done(client, monkeypatch):
     fetch_calls = []
-    monkeypatch.setattr(web, "fetch_video", lambda url, **kw: fetch_calls.append(url))
+    monkeypatch.setattr(web, "fetch_source", lambda url, **kw: fetch_calls.append(url))
     monkeypatch.setattr(web, "extract_recipe", lambda client, source: make_recipe())
     monkeypatch.setattr(web, "push_to_mealie", lambda mealie, recipe, source, **kw: "pan-de-nuez")
 
@@ -139,7 +139,7 @@ def test_unknown_job_404s(client):
 
 
 def test_list_jobs_returns_recent(client, monkeypatch):
-    monkeypatch.setattr(web, "fetch_video", lambda url, **kw: source_record(source_url=url))
+    monkeypatch.setattr(web, "fetch_source", lambda url, **kw: source_record(source_url=url))
     monkeypatch.setattr(web, "extract_recipe", lambda client, source: make_recipe())
     monkeypatch.setattr(web, "push_to_mealie", lambda mealie, recipe, source, **kw: "pan-de-nuez")
 
